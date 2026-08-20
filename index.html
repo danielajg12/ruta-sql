@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ruta SQL · analítica de growth</title>
-<meta name="version" content="v4-movil">
+<meta name="version" content="v5-esquema">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23FC9153'/%3E%3Cpath d='M9 11h14M9 16h9M9 21h12' stroke='white' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -87,6 +87,14 @@ main{min-width:0}
 h2.qt{font-size:24px;font-weight:600;line-height:1.25;margin-bottom:10px}
 .qbody{font-size:15.5px;color:var(--ink-2)}
 code,.mono{font-family:var(--mono);font-size:13px;background:var(--bg);padding:1.5px 5px;border-radius:5px;color:var(--ink)}
+.tablas{margin-top:18px;border:1px solid var(--line);border-radius:11px;overflow:hidden}
+.tablas h4{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);
+  font-weight:600;padding:11px 15px;background:var(--bg);border-bottom:1px solid var(--line);font-family:var(--sans)}
+.tabla{padding:11px 15px;border-bottom:1px solid var(--line-2)}
+.tabla:last-child{border-bottom:0}
+.tabla .tn{font-family:var(--mono);font-size:12.5px;font-weight:500;color:var(--orange-text)}
+.tabla .tc{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);line-height:1.7;margin-top:3px;word-break:break-word}
+.tabla .tnota{font-size:11.5px;color:var(--ink-3);margin-top:5px;font-style:italic}
 .want{margin-top:18px;background:var(--bg);border-radius:11px;padding:14px 16px}
 .want h4{font-family:var(--sans);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:600;margin-bottom:6px}
 .want ul{margin:0;padding-left:18px;font-size:14px;color:var(--ink-2)}
@@ -357,6 +365,7 @@ body.nav-open .scrim{display:block}
           <div class="chips" id="chips"></div>
           <h2 class="qt" id="qt"></h2>
           <div class="qbody" id="qb"></div>
+          <div class="tablas hide" id="tablas"></div>
           <div class="want hide" id="want"><h4>Tu consulta debe devolver</h4><ul id="cols"></ul></div>
           <div class="ask hide" id="ask"></div>
         </div>
@@ -419,7 +428,7 @@ body.nav-open .scrim{display:block}
   </main>
 </div>
 
-<div class="foot"><b>versión 4 · 33 retos · móvil · 2026-08-20</b><br>Ejercicios de práctica sobre un marketplace ficticio. Los datos son sintéticos y se generan en tu navegador; nada se envía a ningún servidor.</div>
+<div class="foot"><b>versión 5 · 33 retos · móvil · esquema en cada reto</b><br>Ejercicios de práctica sobre un marketplace ficticio. Los datos son sintéticos y se generan en tu navegador; nada se envía a ningún servidor.</div>
 </div>
 
 <div class="stickybar hide" id="sticky">
@@ -1302,6 +1311,33 @@ ORDER BY b.city, o.variant;`,
 ];
 
 
+/* ===== esquema, para mostrarlo dentro de cada reto ===== */
+const SCHEMA={
+  drivers:["driver_id","registration_date","approval_date","city","acquisition_channel","referrer_driver_id"],
+  referrals:["referral_id","referrer_driver_id","referred_driver_id","campaign_id","referral_date"],
+  trips:["trip_id","driver_id","trip_date","trip_status","fare"],
+  incentive_payments:["payment_id","referral_id","payment_date","recipient_type","incentive_amount"],
+  campaigns:["campaign_id","campaign_name","campaign_start_date","campaign_end_date","city"],
+  experiments:["experiment_id","name","primary_metric","start_date","end_date"],
+  experiment_exposures:["exposure_id","experiment_id","driver_id","variant","exposure_date"]
+};
+const NOTAS={
+  trips:"trip_status vale 'completed' o 'cancelled'.",
+  incentive_payments:"Cuelga de referral_id, no de driver_id. recipient_type es 'referrer' o 'referred'.",
+  referrals:"referred_driver_id puede ser nulo: el invitado nunca se registró.",
+  experiment_exposures:"Un conductor puede tener más de una fila."
+};
+/* deduce que tablas usa un reto: solo lo que aparece tras FROM o JOIN,
+   asi un alias como "AS drivers" no cuenta como tabla */
+function tablasDe(q){
+  if(q.type!=="sql"||!q.solution) return [];
+  const sql=q.solution.toLowerCase();
+  const usadas=new Set();
+  let m; const re=/(?:from|join)\s+([a-z_][a-z0-9_]*)/g;
+  while((m=re.exec(sql))!==null) if(SCHEMA[m[1]]) usadas.add(m[1]);
+  return Object.keys(SCHEMA).filter(t=>usadas.has(t));
+}
+
 /* ===== ruta: 4 niveles ===== */
 const LEVELS=[
  {n:"Nivel 1", t:"Básico", d:"Filtrar, agrupar y contar sin equivocarse de unidad."},
@@ -1373,13 +1409,21 @@ function go(i){
     <span class="chip g">${S.i+1} de ${Q.length}</span>`;
   $("#qt").textContent=q.title;
   $("#qb").innerHTML=q.body;
-  shw("#want",isSql);shw("#sqlcard",isSql);shw("#concard",!isSql);
+  shw("#want",isSql);shw("#sqlcard",isSql);
+  if(!isSql) shw("#tablas",false);shw("#concard",!isSql);
   shw("#fb",false);shw("#hintbox",false);shw("#hintb2",false);
   shw("#solve",isSql);
   S.hints[S.i]=0;
   if(q.ask){$("#ask").innerHTML="<b>Antes de escribir, pregunta:</b> "+q.ask;shw("#ask",true);}
   else shw("#ask",false);
   if(isSql){
+    const ts=tablasDe(q);
+    $("#tablas").innerHTML = ts.length
+      ? '<h4>Tablas que necesitas para este reto</h4>'+ts.map(t=>
+          '<div class="tabla"><div class="tn">'+t+'</div><div class="tc">'+SCHEMA[t].join(" · ")+'</div>'+
+          (NOTAS[t]?'<div class="tnota">'+NOTAS[t]+'</div>':'')+'</div>').join("")
+      : "";
+    $("#tablas").classList.toggle("hide", !ts.length);
     $("#cols").innerHTML=q.cols.map(c=>"<li>"+c+"</li>").join("");
     $("#editor").value=S.drafts[S.i];
     $("#tries").textContent=S.res[S.i].tries?("intento "+S.res[S.i].tries):"";
