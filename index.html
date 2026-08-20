@@ -249,13 +249,21 @@ details.side[open]>summary::after{content:"–"}
     <details class="side">
       <summary>Sintaxis de este motor</summary>
       <div class="side-b">
+        <div style="font-size:12.5px;color:var(--ink-2);margin-bottom:10px">
+          El motor es SQLite, <b>no</b> BigQuery. Escribe la columna de la izquierda aquí,
+          pero memoriza la de la derecha para la entrevista.
+        </div>
         <div class="dl">
-          <div><code>SAFE_DIVIDE(a, b)</code> — nulo si el denominador es 0.</div>
-          <div><code>DATE_DIFF(fin, ini, 'DAY')</code> — la unidad va entre comillas.</div>
-          <div><code>DATE_TRUNC(fecha, 'MONTH')</code> — idem.</div>
-          <div><code>DATE_SUB(fecha, 30, 'DAY')</code> — firma propia.</div>
-          <div><code>QUALIFY</code> no existe: usa un CTE y filtra por <code>rn = 1</code>.</div>
-          <div>Fechas como texto <code>AAAA-MM-DD</code>. Análisis: <code>2026-08-20</code>.</div>
+          <div><b>Aquí</b><br><code>DATE_DIFF(fin, ini, 'DAY')</code><br>
+               <b>BigQuery</b><br><code>DATE_DIFF(fin, ini, DAY)</code> — sin comillas</div>
+          <div><b>Aquí</b><br><code>DATE_TRUNC(fecha, 'MONTH')</code><br>
+               <b>BigQuery</b><br><code>DATE_TRUNC(fecha, MONTH)</code> — sin comillas</div>
+          <div><b>Aquí</b><br><code>DATE_SUB(fecha, 30, 'DAY')</code><br>
+               <b>BigQuery</b><br><code>DATE_SUB(fecha, INTERVAL 30 DAY)</code></div>
+          <div><b>Aquí</b><br>un CTE y <code>WHERE rn = 1</code><br>
+               <b>BigQuery</b><br><code>QUALIFY rn = 1</code> — sí existe allá</div>
+          <div><code>SAFE_DIVIDE(a, b)</code> — igual en ambos: nulo si el denominador es 0.</div>
+          <div>Fechas como texto <code>AAAA-MM-DD</code>. Fecha de análisis: <code>2026-08-20</code>.</div>
         </div>
       </div>
     </details>
@@ -826,7 +834,13 @@ LEFT JOIN base b ON b.driver_id = a.referred_driver_id;`,
    msg:"Agrega incentive_payments por referral_id antes de unir: un referral con dos pagos duplica filas."}]},
 
 {lvl:3, type:"sql", title:"Tabla de cohortes de retención",
- body:"La consulta insignia. Por <b>mes de registro</b> (solo conductores activados en 7 días), muestra qué proporción seguía activa en el mes N posterior al registro. El mes 0 es el mes del registro.",
+ body:"La consulta insignia. Por <b>mes de registro</b>, muestra qué proporción de la cohorte seguía activa en el mes N posterior al registro.<br><br>"+
+   "<b>Definiciones, para que no tengas que adivinar:</b><br>"+
+   "&bull; <i>Cohorte</i>: conductores agrupados por el mes calendario de su <code>registration_date</code>, contando solo los que activaron en 7 días.<br>"+
+   "&bull; <i>Activo en el mes N</i>: hizo al menos un viaje con <code>trip_status = 'completed'</code> en ese mes calendario.<br>"+
+   "&bull; <i>Mes N</i>: meses calendario transcurridos desde el mes de la cohorte. El mes 0 es el del registro.<br>"+
+   "&bull; <i>Denominador</i>: fijo, el tamaño de la cohorte. No cambia de un mes a otro.<br><br>"+
+   "En una entrevista real no te van a dar esto servido: <b>estas cinco definiciones son justo las que tendrías que preguntar tú</b> antes de escribir una línea.",
  cols:["<code>cohort_month</code>","<code>month_n</code> — meses transcurridos desde el registro","<code>retention</code> — activos ÷ tamaño de la cohorte"],
  hint:"Tres piezas: la cohorte (quién y de qué mes), el tamaño de cada cohorte, y la actividad con DATE_DIFF entre el mes del viaje y el mes de la cohorte. Después une tamaño con actividad.",
  solution:FT+`, cohort AS (
@@ -1495,10 +1509,13 @@ async function loadEngine(){
     referrals:"referral_id, referrer_driver_id, referred_driver_id, campaign_id, referral_date",
     trips:"trip_id, driver_id, trip_date, trip_status, fare",
     incentive_payments:"payment_id, referral_id, payment_date, recipient_type, incentive_amount",
-    campaigns:"campaign_id, campaign_name, campaign_start_date, campaign_end_date, city"};
+    campaigns:"campaign_id, campaign_name, campaign_start_date, campaign_end_date, city",
+    experiments:"experiment_id, name, primary_metric, start_date, end_date",
+    experiment_exposures:"exposure_id, experiment_id, driver_id, variant, exposure_date"};
   const rc=n=>runSQL("SELECT COUNT(*) FROM "+n).rows[0][0];
   $("#schema").innerHTML=Object.entries(t).map(([k,v])=>`<div style="margin-bottom:7px"><b>${k}</b><br>${v}</div>`).join("")+
-    `<div style="color:var(--ink-3);margin-top:8px">${rc("drivers")} conductores · ${rc("trips")} viajes · ${rc("referrals")} referidos · ${rc("incentive_payments")} pagos</div>`;
+    `<div style="color:var(--ink-3);margin-top:10px;line-height:1.6">${rc("drivers")} conductores · ${rc("trips")} viajes · ${rc("referrals")} referidos · ${rc("incentive_payments")} pagos · ${rc("experiment_exposures")} exposiciones<br><br>
+    Los pagos cuelgan de <b>referral_id</b>, no de driver_id. Un conductor puede tener más de una fila en experiment_exposures.</div>`;
   $("#rs").innerHTML="0<small>/"+Q.length+"</small>";
   $("#prog").textContent="0/"+Q.length;
   go(0);setInterval(clock,500);
