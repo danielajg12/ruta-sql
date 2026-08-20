@@ -58,6 +58,12 @@ Motivos habituales, en orden de frecuencia:
 
 **Para que funcione siempre, incluso sin internet:** descarga `sql-wasm.js` y `sql-wasm.wasm` del repositorio de sql.js y ponlos junto al `index.html`. La página los detecta y los usa antes que cualquier CDN, sin tocar una línea de código.
 
+## En el teléfono
+
+Funciona en móvil. El índice de retos se abre con el botón de menú de la cabecera y se cierra solo al elegir uno. Los botones de ejecutar y pedir pista viven en una barra fija abajo, siempre al alcance del pulgar mientras escribes. El editor usa 16px para que iOS no haga zoom al enfocarlo, y todos los controles cumplen el mínimo táctil de 44px.
+
+Escribir SQL largo en un teléfono sigue siendo incómodo: los niveles 1 y 2 se llevan bien, y los retos de concepto son ideales para practicar en el bus. Para los niveles 3 y 4 conviene un teclado de verdad.
+
 ## Dialecto
 
 El motor es SQLite con funciones puente para escribir casi igual que en BigQuery:
