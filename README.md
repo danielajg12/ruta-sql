@@ -39,14 +39,24 @@ Es un solo archivo. No hay build, ni dependencias que instalar, ni variables de 
 
 ## Probarlo en local
 
+**No lo abras con doble clic.** Bajo `file://` los navegadores bloquean la descarga del WebAssembly y la página no arranca. Levanta un servidor en la carpeta donde está el archivo:
+
 ```bash
 python3 -m http.server 8000
 # abre http://localhost:8000
 ```
 
-Abrirlo con doble clic también funciona, pero un servidor local evita problemas de CORS con el WebAssembly.
+## Si no arranca
 
-Necesita conexión la primera vez: `sql.js` se descarga desde cdnjs (~1,5 MB). Para que funcione sin internet, baja `sql-wasm.js` y `sql-wasm.wasm`, ponlos junto al `index.html` y cambia las dos rutas del CDN por rutas relativas.
+La página necesita **sql.js** (~1,5 MB), que descarga la primera vez. Va probando cuatro fuentes en orden: una copia local, jsDelivr, cdnjs y unpkg. Si ninguna responde, muestra un diagnóstico con la causa probable.
+
+Motivos habituales, en orden de frecuencia:
+
+1. **Abierto con doble clic** (`file://`). Usa el servidor local de arriba.
+2. **Sin conexión**, o una red corporativa o un bloqueador que filtra los CDN.
+3. **Vista previa en un entorno aislado** que no permite peticiones externas.
+
+**Para que funcione siempre, incluso sin internet:** descarga `sql-wasm.js` y `sql-wasm.wasm` del repositorio de sql.js y ponlos junto al `index.html`. La página los detecta y los usa antes que cualquier CDN, sin tocar una línea de código.
 
 ## Dialecto
 

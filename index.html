@@ -232,7 +232,7 @@ details.side[open]>summary::after{content:"–"}
   </div>
 </header>
 
-<div id="boot"><div class="boot"><div class="spin"></div>Sembrando la base de datos…</div></div>
+<div id="boot"><div class="boot"><div class="spin"></div><span id="bootmsg">Cargando el motor SQL…</span></div></div>
 
 <div id="app" class="hide">
 <div class="wrap">
@@ -373,7 +373,6 @@ details.side[open]>summary::after{content:"–"}
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script>
 /* ===== fechas ===== */
 const DAY=86400000;
@@ -525,7 +524,7 @@ function buildData(){
 let db=null;
 const esc=v=>v===null||v===undefined?"NULL":"'"+String(v).replace(/'/g,"''")+"'";
 async function boot(){
-  const SQL=await initSqlJs({locateFile:f=>"https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/"+f});
+  const SQL=await initSqlJs({locateFile:f=>(window.__WASM_BASE__||"./")+f});
   db=new SQL.Database();
   db.create_function("SAFE_DIVIDE",(a,b)=>(b===null||b===0||a===null)?null:a/b);
   db.create_function("DATE_DIFF",(end,start,unit)=>{
@@ -555,7 +554,11 @@ async function boot(){
     CREATE TABLE incentive_payments(payment_id TEXT PRIMARY KEY, referral_id TEXT, payment_date TEXT,
       recipient_type TEXT, incentive_amount REAL);
     CREATE TABLE campaigns(campaign_id TEXT PRIMARY KEY, campaign_name TEXT, campaign_start_date TEXT,
-      campaign_end_date TEXT, city TEXT);`);
+      campaign_end_date TEXT, city TEXT);
+    CREATE TABLE experiments(experiment_id TEXT PRIMARY KEY, name TEXT, primary_metric TEXT,
+      start_date TEXT, end_date TEXT);
+    CREATE TABLE experiment_exposures(exposure_id TEXT PRIMARY KEY, experiment_id TEXT,
+      driver_id TEXT, variant TEXT, exposure_date TEXT);`);
   const D=buildData();
   const ins=(t,rows,cols)=>{for(let i=0;i<rows.length;i+=400){
     const c=rows.slice(i,i+400).map(o=>"("+cols.map(k=>typeof o[k]==="number"?o[k]:esc(o[k])).join(",")+")").join(",");
@@ -580,6 +583,12 @@ function norm(v){
   return String(v).trim();
 }
 const key=r=>r.map(norm).join("\u0001");
+/* marca las filas del resultado del usuario que no aparecen en el esperado */
+function mismatchSet(got,exp){
+  const b=new Set(exp.rows.map(key));
+  return got.rows.map(r=>!b.has(key(r)));
+}
+
 function compare(got,exp){
   if(got.cols.length!==exp.cols.length)
     return {ok:false,detail:`Devolviste ${got.cols.length} columna(s) y se esperan ${exp.cols.length}.`,
@@ -944,7 +953,9 @@ GROUP BY d.city
 ORDER BY active_drivers DESC
 LIMIT 1;`,
  rubric:[{test:s=>!/limit|rank|row_number/i.test(s),level:"e",
-   msg:"Falta quedarte con el primer lugar: LIMIT tras ordenar, o una función de ranking."}]},
+   msg:"Falta quedarte con el primer lugar: LIMIT tras ordenar, o una función de ranking."},
+  {test:s=>!/completed/i.test(s),level:"e",
+   msg:"No filtraste trip_status = 'completed'. Con estos datos el ganador sale igual, pero es casualidad: un conductor con solo viajes cancelados contaría como activo."}]},
 
 {lvl:1, type:"concept", title:"Contar filas que no existen",
  body:"Quieres el promedio de viajes por conductor registrado. Escribes <span class='mono'>AVG(trips)</span> sobre un CTE que agrupa la tabla <span class='mono'>trips</span> por conductor. ¿Qué tiene de malo?",
@@ -1362,10 +1373,7 @@ function checkSql(){
       (notes?'<ul class="notes">'+notes+'</ul>':'')+'</div>';
   }else{
     S.res[S.i].status="fail";
-    const g=cmp.why==="columnas"?"Revisa cuántas columnas pide el enunciado."
-      :cmp.why==="filas"?"Suele venir de un JOIN interno que descarta filas, un filtro de más, o agrupar por el nivel equivocado."
-      :"La forma está bien pero algún valor no cuadra. Las filas resaltadas no aparecen en el resultado esperado.";
-    head='<div class="vd no"><b>Todavía no.</b> '+cmp.detail+' '+g+
+    head='<div class="vd no"><b>Todavía no.</b> '+cmp.detail+' '+(cmp.guide||"")+
       (notes?'<ul class="notes">'+notes+'</ul>':'')+'</div>';
   }
   S.res[S.i].warns=warns.length;
@@ -1423,12 +1431,62 @@ function download(){
   a.download="informe-ruta-sql.json";a.click();URL.revokeObjectURL(a.href);
 }
 
+/* ===== carga del motor: intenta varias fuentes ===== */
+const SOURCES=[
+  {name:"copia local",  base:"./"},
+  {name:"jsDelivr",     base:"https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/"},
+  {name:"cdnjs",        base:"https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/"},
+  {name:"unpkg",        base:"https://unpkg.com/sql.js@1.10.3/dist/"}
+];
+function loadScript(url){
+  return new Promise((ok,fail)=>{
+    const el=document.createElement("script");
+    el.src=url; el.onload=ok;
+    el.onerror=()=>fail(new Error("no se pudo descargar "+url));
+    document.head.appendChild(el);
+  });
+}
+async function loadEngine(){
+  // si el motor ya viene incrustado o cargado por otra via, usarlo tal cual
+  if(typeof initSqlJs==="function"){
+    window.__WASM_BASE__=window.__WASM_BASE__||"./";
+    return {name:"ya disponible"};
+  }
+  const tried=[];
+  for(const src of SOURCES){
+    try{
+      $("#bootmsg").textContent="Cargando el motor SQL desde "+src.name+"…";
+      await loadScript(src.base+"sql-wasm.js");
+      if(typeof initSqlJs!=="function") throw new Error("el archivo cargó pero no define initSqlJs");
+      window.__WASM_BASE__=src.base;
+      return src;
+    }catch(e){ tried.push(src.name); }
+  }
+  const err=new Error("sin fuentes disponibles"); err.tried=tried; throw err;
+}
+
 /* ===== arranque ===== */
 (async function(){
-  try{await boot();}
+  try{
+    await loadEngine();
+    $("#bootmsg").textContent="Sembrando la base de datos…";
+    await boot();
+  }
   catch(e){
-    $("#boot").innerHTML='<div class="boot" style="color:var(--no)">No se pudo cargar el motor SQL.<br>'+
-      'La página descarga sql.js del CDN la primera vez.<br><br>'+sane(e.message||e)+'</div>';
+    const local=location.protocol==="file:";
+    $("#boot").innerHTML='<div class="boot" style="color:var(--ink-2);max-width:560px;margin:0 auto;text-align:left">'+
+      '<div style="font-family:var(--disp);font-weight:600;font-size:17px;color:var(--no);margin-bottom:10px">'+
+      'No se pudo cargar el motor SQL</div>'+
+      'La página necesita <b>sql.js</b>, que normalmente descarga de internet la primera vez. '+
+      'Aquí no fue posible'+(e.tried?' desde ninguna fuente ('+e.tried.join(", ")+')':'')+'.'+
+      (local?'<br><br><b>Estás abriendo el archivo con doble clic.</b> Muchos navegadores bloquean la descarga '+
+        'del WebAssembly bajo <code>file://</code>. Levanta un servidor local en la carpeta del archivo:'+
+        '<br><br><code style="display:block;padding:10px;background:var(--bg);border-radius:8px">'+
+        'python3 -m http.server 8000</code><br>y abre <code>http://localhost:8000</code>.'
+       :'<br><br>Puede ser falta de conexión, un bloqueador de anuncios o una red corporativa que filtra los CDN.')+
+      '<br><br><b>Para que funcione sin internet:</b> descarga <code>sql-wasm.js</code> y <code>sql-wasm.wasm</code> '+
+      'de sql.js y ponlos en la misma carpeta que este archivo. La página los usa primero si están.'+
+      '<br><br><span style="font-family:var(--mono);font-size:11.5px;color:var(--ink-3)">'+sane(e.message||e)+'</span></div>';
     return;
   }
   shw("#boot",false);shw("#app",true);shw("#fab",true);
